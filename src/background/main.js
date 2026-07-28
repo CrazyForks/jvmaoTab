@@ -98,17 +98,22 @@ browserApi?.runtime?.onMessage.addListener(function (request, sender, sendRespon
       if (request.data && request.data.domain && request.data.iconUrl) {
         browserApi?.storage?.local?.get(['pendingFavicons'], (result) => {
           const pending = result.pendingFavicons || [];
-          // 避免重复
-          const exists = pending.find((p) => p.domain === request.data.domain);
-          if (!exists) {
-            pending.push({
-              domain: request.data.domain,
-              iconUrl: request.data.iconUrl,
-              size: request.data.size || null,
-              timestamp: Date.now(),
-            });
-            browserApi?.storage?.local?.set({ pendingFavicons: pending });
+          // 同一域名只保留最新检测结果，避免旧页面的图标稍后覆盖新结果。
+          const nextItem = {
+            domain: request.data.domain,
+            iconUrl: request.data.iconUrl,
+            size: request.data.size || null,
+            timestamp: Date.now(),
+          };
+          const existingIndex = pending.findIndex(
+            (item) => item.domain === request.data.domain
+          );
+          if (existingIndex >= 0) {
+            pending[existingIndex] = nextItem;
+          } else {
+            pending.push(nextItem);
           }
+          browserApi?.storage?.local?.set({ pendingFavicons: pending });
         });
       }
       sendResponse({ ok: true });

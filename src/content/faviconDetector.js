@@ -1,10 +1,15 @@
+import {
+  getFaviconPriority,
+  isFaviconLink,
+  preferStandardFavicon,
+} from "@/utils/faviconSelection";
+
 // 内容脚本侧：检测当前页面 favicon，仅返回结果，不写入 IndexedDB
 
 // 获取所有可能的 favicon link 标签
 const getFaviconLinks = () => {
   const links = Array.from(document.getElementsByTagName("link"));
-  const relRegex = /\b(icon|shortcut icon|apple-touch-icon|apple-touch-icon-precomposed)\b/i;
-  return links.filter((link) => relRegex.test(link.rel || ""));
+  return links.filter(isFaviconLink);
 };
 
 // 解析 sizes 字符串为数字（仅取宽度，如 "128x128" -> 128）
@@ -73,7 +78,11 @@ export const detectFaviconForCurrentPage = async () => {
       if (!href) return;
       const absUrl = new URL(href, window.location.href).href;
       const size = parseSize(link.getAttribute("sizes"));
-      candidates.push({ url: absUrl, size: size || null });
+      candidates.push({
+        url: absUrl,
+        size: size || null,
+        priority: getFaviconPriority(link.getAttribute("rel")),
+      });
     } catch (e) {
       // ignore
     }
@@ -89,8 +98,10 @@ export const detectFaviconForCurrentPage = async () => {
     }
   }
 
+  const preferredCandidates = preferStandardFavicon(candidates);
+
   // 先尝试根据 link.sizes 选择，若没有尺寸信息，则用真实尺寸再挑一遍
-  const withParsedSize = candidates.filter((c) => typeof c.size === "number");
+  const withParsedSize = preferredCandidates.filter((c) => typeof c.size === "number");
   if (withParsedSize.length > 0) {
     const best = chooseBestIcon(withParsedSize);
     return {
@@ -102,7 +113,7 @@ export const detectFaviconForCurrentPage = async () => {
 
   // 没有 sizes 信息，预加载实际尺寸
   const loaded = [];
-  for (const c of candidates) {
+  for (const c of preferredCandidates) {
     try {
       const imgInfo = await loadImageSize(c.url);
       loaded.push({
@@ -127,5 +138,4 @@ export const detectFaviconForCurrentPage = async () => {
     size: best.size || null,
   };
 };
-
 

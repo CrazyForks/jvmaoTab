@@ -147,6 +147,43 @@ const SoSelect = (props) => {
     const [openAdd, setOpenAdd] = React.useState(false);
     const [customList, setCustomList] = React.useState(customkey || []);
 
+    // 搜索结果页运行在内容脚本中，无法直接读取扩展页的 IndexedDB，
+    // 因此需要把数据库里的最新 favicon 地址同步回自定义搜索源配置。
+    React.useEffect(() => {
+        let cancelled = false;
+
+        const syncCustomFaviconUrls = async () => {
+            const nextList = await Promise.all(customList.map(async (item) => {
+                if (!item?.url) return item;
+
+                try {
+                    const origin = new URL(item.url).origin;
+                    const record = await getFavicon(origin);
+                    if (record?.iconUrl && record.iconUrl !== item.iconUrl) {
+                        return { ...item, iconUrl: record.iconUrl };
+                    }
+                } catch {
+                    // 保留无效或暂时无法读取图标的原配置
+                }
+                return item;
+            }));
+
+            if (cancelled) return;
+            const changed = nextList.some((item, index) => item !== customList[index]);
+            if (changed) {
+                setCustomList(nextList);
+                option.setItem('customkey', nextList);
+            }
+        };
+
+        syncCustomFaviconUrls();
+        window.addEventListener('faviconRefreshed', syncCustomFaviconUrls);
+        return () => {
+            cancelled = true;
+            window.removeEventListener('faviconRefreshed', syncCustomFaviconUrls);
+        };
+    }, [customList, option]);
+
     const state = React.useRef({
         isChange: false,
         isInit: false

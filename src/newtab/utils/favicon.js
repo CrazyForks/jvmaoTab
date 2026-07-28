@@ -1,5 +1,10 @@
 import { getFavicon, saveFavicon } from "~/db";
 import { isSpecialProtocol } from "~/utils";
+import {
+  getFaviconPriority,
+  isFaviconLink,
+  preferStandardFavicon,
+} from "@/utils/faviconSelection";
 
 // 解析 sizes 字符串为数字（仅取宽度，如 "128x128" -> 128）
 const parseSize = (sizes) => {
@@ -97,8 +102,7 @@ export const detectFaviconFromUrl = async (url) => {
 
     // 获取所有可能的 favicon link 标签
     const links = Array.from(doc.getElementsByTagName("link"));
-    const relRegex = /\b(icon|shortcut icon|apple-touch-icon|apple-touch-icon-precomposed)\b/i;
-    const faviconLinks = links.filter((link) => relRegex.test(link.rel || ""));
+    const faviconLinks = links.filter(isFaviconLink);
 
     const candidates = [];
     let darkFaviconUrl = null;
@@ -121,7 +125,11 @@ export const detectFaviconFromUrl = async (url) => {
           }
         } else {
           // 正常模式图标，加入候选列表
-          candidates.push({ url: absUrl, size: size || null });
+          candidates.push({
+            url: absUrl,
+            size: size || null,
+            priority: getFaviconPriority(link.getAttribute("rel")),
+          });
         }
       } catch (e) {
         // ignore
@@ -138,8 +146,10 @@ export const detectFaviconFromUrl = async (url) => {
       }
     }
 
+    const preferredCandidates = preferStandardFavicon(candidates);
+
     // 先尝试根据 link.sizes 选择，若没有尺寸信息，则用真实尺寸再挑一遍
-    const withParsedSize = candidates.filter((c) => typeof c.size === "number");
+    const withParsedSize = preferredCandidates.filter((c) => typeof c.size === "number");
     if (withParsedSize.length > 0) {
       const best = chooseBestIcon(withParsedSize);
       const normalIconUrl = best.url;
@@ -166,7 +176,7 @@ export const detectFaviconFromUrl = async (url) => {
 
     // 没有 sizes 信息，预加载实际尺寸（最多尝试前 3 个，避免太慢）
     const loaded = [];
-    for (const c of candidates.slice(0, 3)) {
+    for (const c of preferredCandidates.slice(0, 3)) {
       try {
         const imgInfo = await loadImageSize(c.url);
         loaded.push({
@@ -180,7 +190,7 @@ export const detectFaviconFromUrl = async (url) => {
 
     if (loaded.length === 0) {
       // 如果都加载失败，至少返回第一个候选 URL
-      const fallbackIconUrl = candidates[0]?.url || null;
+      const fallbackIconUrl = preferredCandidates[0]?.url || null;
       
       // 只存储从 HTML 解析到的实际图片 URL，不存储 Chrome API URL
       const finalDarkIconUrl = darkFaviconUrl || null;
@@ -400,5 +410,4 @@ export const ensureFaviconForUrl = async (url) => {
     console.warn("[favicon] ensureFaviconForUrl: domain mismatch", data.domain, "vs", origin);
   }
 };
-
 
